@@ -23,7 +23,7 @@ iama <- read_csv(
 )
 
 boigu <- read_csv(
-  here("data", "processed", "Boigu_10_AnnualMorphology_2013_2025.csv"),
+  here("data", "processed", "Boigu_AnnualMorphology_2013_2025.csv"),
   show_col_types = FALSE
 )
 

@@ -1,34 +1,117 @@
 # Endpoint land redistribution in the Torres Strait
 # Kendra Sturdee
 #
-# Compares land gained, land lost and net area change
-# between the first and last accepted island footprints.
-# Values are from the completed spatial analysis.
+# Compares land gained, lost and net area change
+# between accepted baseline and 2025 island footprints.
+# Masig and Iama: 1988–2025; Boigu: 2013–2025.
 
 library(ggplot2)
 library(dplyr)
+library(readr)
 library(tidyr)
+library(here)
 
-# Load previously calculated spatial statistics
+# Load validated redistribution data
+
+masig <- read_csv(
+  here("data", "processed", "Masig_07_LandRedistribution_1988_2025.csv"),
+  show_col_types = FALSE
+)
+
+boigu <- read_csv(
+  here("data", "processed", "Boigu_LandPersistence_Redistribution.csv"),
+  show_col_types = FALSE
+)
+
+# Extract Masig measurements
+
+get_metric <- function(data, metric, unit) {
+  value <- data %>%
+    filter(Metric == metric, Unit == unit) %>%
+    pull(Value)
+  
+  if (length(value) != 1 || !is.finite(value)) {
+    stop("Missing or invalid measurement: ", metric, " (", unit, ")")
+  }
+  
+  value
+}
+
+masig_baseline <- get_metric(masig, "1988 area", "ha")
+masig_gain <- get_metric(masig, "Land gained", "ha")
+masig_loss <- get_metric(masig, "Land lost", "ha")
+masig_net <- get_metric(masig, "Net area change", "ha")
+
+# Iama endpoint measurements from Analysis_Log.md
+# Recorded 2026-11-16 16:41
+
+iama_baseline <- 169.2901
+iama_gain <- 15.8940
+iama_loss <- 2.1557
+iama_net <- 13.7383
+
+# Verify Boigu source measurements
+
+required_boigu <- c(
+  "Area2013_ha",
+  "Gained_ha",
+  "Lost_ha",
+  "NetChange_ha"
+)
+
+stopifnot(
+  nrow(boigu) == 1,
+  all(required_boigu %in% names(boigu))
+)
+
+# Combine endpoint redistribution measurements
 
 redistribution <- tibble(
   Island = c("Masig", "Iama", "Boigu"),
-  Gained_pct = c(2.56, 9.39, 0.44),
-  Lost_pct = c(3.43, 1.27, 0.05),
-  Net_pct = c(-0.87, 8.12, 0.39)
-)
+  Baseline_ha = c(
+    masig_baseline,
+    iama_baseline,
+    boigu$Area2013_ha
+  ),
+  Gained_ha = c(
+    masig_gain,
+    iama_gain,
+    boigu$Gained_ha
+  ),
+  Lost_ha = c(
+    masig_loss,
+    iama_loss,
+    boigu$Lost_ha
+  ),
+  Net_ha = c(
+    masig_net,
+    iama_net,
+    boigu$NetChange_ha
+  )
+) %>%
+  mutate(
+    Gained_pct = 100 * Gained_ha / Baseline_ha,
+    Lost_pct = 100 * Lost_ha / Baseline_ha,
+    Net_pct = 100 * Net_ha / Baseline_ha
+  )
 
-# Verify analytical values
+# Verify area balances
 
 stopifnot(
+  all(is.finite(as.matrix(redistribution[, -1]))),
+  all(redistribution$Baseline_ha > 0),
+  all(redistribution$Gained_ha >= 0),
+  all(redistribution$Lost_ha >= 0),
   all(
     abs(
-      redistribution$Gained_pct -
-        redistribution$Lost_pct -
-        redistribution$Net_pct
+      redistribution$Gained_ha -
+        redistribution$Lost_ha -
+        redistribution$Net_ha
     ) < 0.02
   )
 )
+
+print(redistribution, width = Inf)
 
 redistribution$Island <- factor(
   redistribution$Island,
@@ -194,10 +277,10 @@ figure3 <- ggplot(
     x = "Percentage of baseline island area",
     y = NULL,
     fill = NULL,
-    caption = paste(
-      "Masig and Iama: 1988–2025 | Boigu: 2013–2025",
-      "\nDiamonds indicate net endpoint area change.",
-      "Values are descriptive and exclude positional uncertainty."
+    caption = paste0(
+      "Masig and Iama: 1988–2025 | Boigu: 2013–2025\n",
+      "Diamonds indicate net endpoint area change.\n",
+      "Values describe mapped footprint redistribution; positional uncertainty is not quantified."
     )
   ) +
   theme_minimal(base_size = 12) +
@@ -263,13 +346,3 @@ figure3 <- ggplot(
 # Preview figure
 
 print(figure3)
-
-
-ggsave(
-  filename = here::here("figures", "03_LandRedistribution.png"),
-  plot = figure3,
-  width = 10,
-  height = 7,
-  dpi = 300,
-  bg = "#102D35"
-)
